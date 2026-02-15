@@ -2,6 +2,9 @@ import { fuzzySearch } from "./lib/fuzzy.js";
 import { runBrowserProbe, scrapePassmarkScores } from "./lib/passmark.js";
 
 const LATEST_KEY = "snapshots/latest.json";
+const CACHE_TTL_SHORT = 300;
+const CACHE_TTL_MEDIUM = 900;
+const CACHE_TTL_LONG = 3600;
 
 function getSnapshotKey(dateString) {
   return `snapshots/${dateString}.json`;
@@ -11,15 +14,48 @@ function getDateString(timestamp) {
   return new Date(timestamp).toISOString().slice(0, 10);
 }
 
-function jsonResponse(data, status = 200) {
+function jsonResponse(data, status = 200, cacheControl = "no-store") {
   return new Response(JSON.stringify(data, null, 2), {
     status,
     headers: {
       "content-type": "application/json; charset=utf-8",
       "access-control-allow-origin": "*",
-      "cache-control": "no-store",
+      "cache-control": cacheControl,
     },
   });
+}
+
+function normalizedCpuQuery(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildEdgeCacheControl(ttlSeconds) {
+  return `public, max-age=0, s-maxage=${ttlSeconds}, stale-while-revalidate=60`;
+}
+
+async function serveCachedGet(cacheKeyUrl, ttlSeconds, buildResponse) {
+  const cache = caches.default;
+  const cacheKey = new Request(cacheKeyUrl, { method: "GET" });
+  const hit = await cache.match(cacheKey);
+  if (hit) return hit;
+
+  const response = await buildResponse();
+  if (response.status !== 200) return response;
+
+  const headers = new Headers(response.headers);
+  headers.set("cache-control", buildEdgeCacheControl(ttlSeconds));
+
+  const cacheable = new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+
+  await cache.put(cacheKey, cacheable.clone());
+  return cacheable;
 }
 
 async function writeSnapshot(env, payload) {
@@ -171,9 +207,11 @@ async function handleApiRequest(request, env) {
   }
 
   if (url.pathname === "/v1/snapshots/latest") {
-    const latest = await getLatestSnapshotOrError(env);
-    if (latest instanceof Response) return latest;
-    return jsonResponse(latest);
+    return serveCachedGet(`${url.origin}/v1/snapshots/latest`, CACHE_TTL_MEDIUM, async () => {
+      const latest = await getLatestSnapshotOrError(env);
+      if (latest instanceof Response) return latest;
+      return jsonResponse(latest, 200, buildEdgeCacheControl(CACHE_TTL_MEDIUM));
+    });
   }
 
   if (url.pathname.startsWith("/v1/snapshots/")) {
@@ -182,52 +220,71 @@ async function handleApiRequest(request, env) {
       return jsonResponse({ error: "Snapshot date must use YYYY-MM-DD" }, 400);
     }
 
-    const snapshot = await readSnapshot(env, getSnapshotKey(date));
-    if (!snapshot) return jsonResponse({ error: "Snapshot not found" }, 404);
-    return jsonResponse(snapshot);
+    return serveCachedGet(`${url.origin}/v1/snapshots/${date}`, CACHE_TTL_LONG, async () => {
+      const snapshot = await readSnapshot(env, getSnapshotKey(date));
+      if (!snapshot) return jsonResponse({ error: "Snapshot not found" }, 404);
+      return jsonResponse(snapshot, 200, buildEdgeCacheControl(CACHE_TTL_LONG));
+    });
   }
 
   if (url.pathname === "/v1/cpus") {
-    const latest = await getLatestSnapshotOrError(env);
-    if (latest instanceof Response) return latest;
-
-    const query = url.searchParams.get("query") || "";
-    if (!query.trim()) {
+    const rawQuery = url.searchParams.get("query") || "";
+    const query = normalizedCpuQuery(rawQuery);
+    if (!query) {
       return jsonResponse({ error: "Missing required query parameter: query" }, 400);
     }
 
     const limit = parseLimit(url.searchParams.get("limit"), 5);
-    const matches = fuzzySearch(latest.cpus || [], query, limit);
+    const cacheUrl = `${url.origin}/v1/cpus?query=${encodeURIComponent(query)}&limit=${limit}`;
 
-    return jsonResponse({
-      query,
-      total: matches.length,
-      generatedAt: latest.generatedAt,
-      results: matches,
+    return serveCachedGet(cacheUrl, CACHE_TTL_SHORT, async () => {
+      const latest = await getLatestSnapshotOrError(env);
+      if (latest instanceof Response) return latest;
+
+      const matches = fuzzySearch(latest.cpus || [], query, limit);
+      return jsonResponse(
+        {
+          query,
+          total: matches.length,
+          generatedAt: latest.generatedAt,
+          results: matches,
+        },
+        200,
+        buildEdgeCacheControl(CACHE_TTL_SHORT),
+      );
     });
   }
 
   if (url.pathname === "/v1/cpus/all") {
-    const latest = await getLatestSnapshotOrError(env);
-    if (latest instanceof Response) return latest;
+    return serveCachedGet(`${url.origin}/v1/cpus/all`, CACHE_TTL_SHORT, async () => {
+      const latest = await getLatestSnapshotOrError(env);
+      if (latest instanceof Response) return latest;
 
-    return jsonResponse({
-      generatedAt: latest.generatedAt,
-      total: (latest.cpus || []).length,
-      results: latest.cpus || [],
+      return jsonResponse(
+        {
+          generatedAt: latest.generatedAt,
+          total: (latest.cpus || []).length,
+          results: latest.cpus || [],
+        },
+        200,
+        buildEdgeCacheControl(CACHE_TTL_SHORT),
+      );
     });
   }
 
   if (url.pathname.startsWith("/v1/cpus/")) {
-    const latest = await getLatestSnapshotOrError(env);
-    if (latest instanceof Response) return latest;
-
     const id = decodeURIComponent(url.pathname.replace("/v1/cpus/", "").trim());
-    const cpu = (latest.cpus || []).find((item) => item.id === id);
+    const cacheUrl = `${url.origin}/v1/cpus/${encodeURIComponent(id)}`;
 
-    if (!cpu) return jsonResponse({ error: "CPU not found" }, 404);
+    return serveCachedGet(cacheUrl, CACHE_TTL_MEDIUM, async () => {
+      const latest = await getLatestSnapshotOrError(env);
+      if (latest instanceof Response) return latest;
 
-    return jsonResponse({ generatedAt: latest.generatedAt, cpu });
+      const cpu = (latest.cpus || []).find((item) => item.id === id);
+      if (!cpu) return jsonResponse({ error: "CPU not found" }, 404);
+
+      return jsonResponse({ generatedAt: latest.generatedAt, cpu }, 200, buildEdgeCacheControl(CACHE_TTL_MEDIUM));
+    });
   }
 
   return jsonResponse(
