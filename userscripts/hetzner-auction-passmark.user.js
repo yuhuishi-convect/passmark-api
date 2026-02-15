@@ -1,14 +1,16 @@
 // ==UserScript==
 // @name         Hetzner Auction PassMark Overlay
 // @namespace    https://github.com/dayeye2006/passmark-api
-// @version      0.2.1
+// @version      0.2.3
 // @description  Show CPU Mark and CPU Mark per Euro on Hetzner Server Auction cards.
 // @author       passmark-api
 // @match        https://www.hetzner.com/sb
 // @match        https://www.hetzner.com/sb/*
 // @updateURL    https://raw.githubusercontent.com/yuhuishi-convect/passmark-api/main/userscripts/hetzner-auction-passmark.user.js
 // @downloadURL  https://raw.githubusercontent.com/yuhuishi-convect/passmark-api/main/userscripts/hetzner-auction-passmark.user.js
-// @grant        none
+// @connect      passmark-api.dayeye2006.workers.dev
+// @grant        GM.xmlHttpRequest
+// @grant        GM_xmlhttpRequest
 // ==/UserScript==
 
 (function () {
@@ -118,6 +120,14 @@
 
     candidates.sort((a, b) => b.length - a.length);
     return candidates[0];
+  }
+
+  function getCardTextForParsing(card) {
+    if (!card) return "";
+    const clone = card.cloneNode(true);
+    clone.querySelectorAll(`.${BOX_CLASS}`).forEach((node) => node.remove());
+    clone.querySelectorAll(`.${SORT_BAR_CLASS}`).forEach((node) => node.remove());
+    return clone.innerText || clone.textContent || "";
   }
 
   function scorePerEuro(score, euroPrice) {
@@ -309,10 +319,7 @@
 
         for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
           try {
-            const response = await fetch(url, {
-              method: "GET",
-              headers: { accept: "application/json" },
-            });
+            const response = await requestJson(url);
 
             if (!response.ok) {
               const shouldRetry = response.status === 429 || response.status >= 500;
@@ -325,7 +332,7 @@
               throw new Error(`API ${response.status}`);
             }
 
-            const payload = await response.json();
+            const payload = response.data;
             const result = payload?.results?.[0] || null;
             if (!result || typeof result.cpuMark !== "number") break;
             return result;
@@ -349,6 +356,48 @@
       requestCache.delete(cacheKey);
       throw error;
     }
+  }
+
+  function requestJson(url) {
+    const gmRequest =
+      typeof GM !== "undefined" && GM && typeof GM.xmlHttpRequest === "function"
+        ? GM.xmlHttpRequest.bind(GM)
+        : typeof GM_xmlhttpRequest === "function"
+          ? GM_xmlhttpRequest
+          : null;
+
+    if (gmRequest) {
+      return new Promise((resolve, reject) => {
+        gmRequest({
+          method: "GET",
+          url,
+          headers: { accept: "application/json" },
+          timeout: 15000,
+          onload: (resp) => {
+            const status = Number(resp.status || 0);
+            const ok = status >= 200 && status < 300;
+            let data = null;
+            try {
+              data = resp.responseText ? JSON.parse(resp.responseText) : null;
+            } catch (error) {
+              reject(new Error(`Invalid JSON (${status})`));
+              return;
+            }
+            resolve({ ok, status, data });
+          },
+          onerror: () => reject(new Error("Network error")),
+          ontimeout: () => reject(new Error("Timeout")),
+        });
+      });
+    }
+
+    return fetch(url, {
+      method: "GET",
+      headers: { accept: "application/json" },
+    }).then(async (response) => {
+      const data = await response.json();
+      return { ok: response.ok, status: response.status, data };
+    });
   }
 
   function getOrCreateInfoBox(card) {
@@ -393,7 +442,7 @@
   }
 
   async function enhanceCard(card) {
-    const cardText = card.innerText || "";
+    const cardText = getCardTextForParsing(card);
     const cpuName = pickCpuLineFromText(cardText);
     const monthlyPrice = parseEuroPriceFromText(cardText);
 
