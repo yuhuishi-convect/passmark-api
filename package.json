@@ -6,9 +6,12 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "test": "node --test"
+    "test": "node --test",
+    "test:userscript:firefox": "playwright test e2e/hetzner-userscript.firefox.pw.js --project=firefox",
+    "test:userscript:firefox:real": "playwright test e2e/hetzner-userscript.real.firefox.pw.js --project=firefox"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "wrangler": "^4.2.0"
   },
   "dependencies": {

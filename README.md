@@ -92,6 +92,50 @@ Runs every day at 03:00 UTC.
 
 `/v1/admin/*` is test-only and returns `403` unless `ENABLE_TEST_ENDPOINTS=true` (or localhost runtime).
 
+## Userscript (Hetzner Auction)
+
+Userscript file:
+- `userscripts/hetzner-auction-passmark.user.js`
+
+What it does on `https://www.hetzner.com/sb/`:
+- Detects each auction card CPU + monthly euro price.
+- Calls this API (`/v1/cpus?query=...`) to get CPU Mark.
+- Renders `CPU Mark` and `Score / €` on the card.
+
+### Install
+
+1. Install Tampermonkey (or Greasemonkey) in your browser.
+2. Create a new userscript.
+3. Paste `userscripts/hetzner-auction-passmark.user.js`.
+4. Open/reload `https://www.hetzner.com/sb/`.
+
+### Testing the userscript
+
+Manual:
+- Open `https://www.hetzner.com/sb/` and verify each card gets a PassMark info box.
+
+Automated (local):
+- We test extraction/scoring helpers with Node tests:
+
+```bash
+yarn test
+```
+
+Userscript helper tests are in:
+- `test/userscript/utils.test.js`
+
+Headless Firefox E2E:
+
+```bash
+yarn playwright install firefox
+yarn test:userscript:firefox
+```
+
+This runs Playwright in headless Firefox against a local fixture page and asserts the userscript renders:
+- CPU Mark
+- Price
+- Score / €
+
 ### Example
 
 ```bash
@@ -123,4 +167,10 @@ Stored snapshot JSON in R2 (`snapshots/YYYY-MM-DD.json` and `snapshots/latest.js
     }
   ]
 }
+```
+
+Real E2E user-journey (live Hetzner page + live API):
+
+```bash
+yarn test:userscript:firefox:real
 ```
