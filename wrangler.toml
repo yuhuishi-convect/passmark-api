@@ -1,0 +1,18 @@
+name = "passmark-api"
+main = "src/index.js"
+compatibility_date = "2025-03-05"
+compatibility_flags = ["nodejs_compat_v2"]
+
+[triggers]
+crons = ["0 3 * * *"]
+
+[[r2_buckets]]
+binding = "PASSMARK_BUCKET"
+bucket_name = "passmark-cpu-scores"
+preview_bucket_name = "passmark-cpu-scores-preview"
+
+[vars]
+PASSMARK_SOURCE_URL = "https://www.cpubenchmark.net/cpu-list/all"
+
+[browser]
+binding = "BROWSER"
