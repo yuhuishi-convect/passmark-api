@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Hetzner Auction PassMark Overlay
 // @namespace    https://github.com/dayeye2006/passmark-api
-// @version      0.2.4
+// @version      0.2.5
 // @description  Show CPU Mark and CPU Mark per Euro on Hetzner Server Auction cards.
 // @author       passmark-api
 // @match        https://www.hetzner.com/sb
@@ -120,6 +120,17 @@
 
     candidates.sort((a, b) => b.length - a.length);
     return candidates[0];
+  }
+
+  function getCpuNameFromCard(card, fallbackText) {
+    if (!card) return pickCpuLineFromText(fallbackText || "");
+
+    const elements = Array.from(card.querySelectorAll("div, span, strong, p, li"));
+    const label = elements.find((el) => String(el.textContent || "").trim().toLowerCase() === "cpu");
+    const directValue = label?.nextElementSibling?.textContent?.trim();
+    if (directValue && directValue.length >= 4) return directValue;
+
+    return pickCpuLineFromText(fallbackText || "");
   }
 
   function getCardTextForParsing(card) {
@@ -445,7 +456,7 @@
 
   async function enhanceCard(card) {
     const cardText = getCardTextForParsing(card);
-    const cpuName = pickCpuLineFromText(cardText);
+    const cpuName = getCpuNameFromCard(card, cardText);
     const monthlyPrice = parseEuroPriceFromText(cardText);
 
     if (!cpuName || !monthlyPrice) return;
