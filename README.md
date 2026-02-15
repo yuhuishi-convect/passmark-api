@@ -106,13 +106,21 @@ What it does on `https://www.hetzner.com/sb/`:
 ### Install
 
 1. Install Tampermonkey (or Greasemonkey) in your browser.
-2. Create a new userscript.
-3. Paste `userscripts/hetzner-auction-passmark.user.js`.
-4. Open/reload `https://www.hetzner.com/sb/`.
-5. Use the `Sort By` selector above the auction cards:
+2. Install directly from raw GitHub URL:
+
+```text
+https://raw.githubusercontent.com/yuhuishi-convect/passmark-api/main/userscripts/hetzner-auction-passmark.user.js
+```
+
+3. Open/reload `https://www.hetzner.com/sb/`.
+4. Use the `Sort By` selector above the auction cards:
    - `Hetzner Default`
    - `CPU Mark (High → Low)`
    - `Score / € (High → Low)`
+
+### Screenshot
+
+![Hetzner Auction PassMark Overlay](assets/screen.png)
 
 ### Testing the userscript
 
