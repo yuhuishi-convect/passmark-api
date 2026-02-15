@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Hetzner Auction PassMark Overlay
-// @namespace    https://github.com/dayeye2006/passmark-api
-// @version      0.2.5
+// @namespace    https://github.com/yuhuishi-convect/passmark-api
+// @version      0.2.6
 // @description  Show CPU Mark and CPU Mark per Euro on Hetzner Server Auction cards.
 // @author       passmark-api
 // @match        https://www.hetzner.com/sb

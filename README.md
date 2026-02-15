@@ -1,10 +1,96 @@
 # passmark-api
 
-Cloudflare Workers project that:
-- Scrapes PassMark CPU scores daily via Cron Trigger.
-- Stores snapshots in Cloudflare R2.
-- Exposes a public HTTP API with fuzzy CPU name lookup.
-- Supports Cloudflare Browser Rendering fallback when direct fetch is blocked.
+Main goal: enhance Hetzner Server Auction with CPU performance insights via a userscript.
+
+The userscript adds:
+- PassMark CPU score per auction card
+- Score per euro (`CPU Mark / monthly price`)
+- Client-side sorting by `CPU Mark` and `Score / €`
+
+Technical implementation details (scraper, storage, API) are documented in the `Technical Details` section below.
+
+## Quick Start (Usage)
+
+1. Install Tampermonkey (or Greasemonkey/Violentmonkey) in your browser.
+2. Open this URL and install the userscript:
+
+```text
+https://raw.githubusercontent.com/yuhuishi-convect/passmark-api/main/userscripts/hetzner-auction-passmark.user.js
+```
+
+3. Open `https://www.hetzner.com/sb/` and refresh.
+4. You should see:
+   - `CPU Mark`
+   - `Score / €`
+   - `Sort By` options (`Hetzner Default`, `CPU Mark`, `Score / €`)
+
+## Userscript (Main Product)
+
+Userscript file:
+- `userscripts/hetzner-auction-passmark.user.js`
+
+Target page:
+- `https://www.hetzner.com/sb/`
+
+What it does:
+- Detects each auction card CPU + monthly euro price.
+- Calls this API (`/v1/cpus?query=...`) to get CPU Mark.
+- Renders `CPU Mark` and `Score / €` on each card.
+- Adds sorting for visible cards: `Hetzner Default | CPU Mark | Score / €`.
+
+### Install (Detailed)
+
+1. Install Tampermonkey (or Greasemonkey/Violentmonkey).
+2. Install script from raw URL:
+
+```text
+https://raw.githubusercontent.com/yuhuishi-convect/passmark-api/main/userscripts/hetzner-auction-passmark.user.js
+```
+
+3. Open/reload `https://www.hetzner.com/sb/`.
+4. Use the `Sort By` selector above auction cards:
+   - `Hetzner Default`
+   - `CPU Mark (High → Low)`
+   - `Score / € (High → Low)`
+
+### Screenshot
+
+![Hetzner Auction PassMark Overlay](assets/screen.png)
+
+### Userscript Testing
+
+Manual:
+- Open `https://www.hetzner.com/sb/` and verify cards get a PassMark info box.
+
+Automated:
+
+```bash
+yarn test
+```
+
+Userscript helper tests:
+- `test/userscript/utils.test.js`
+
+Headless Firefox E2E (fixture):
+
+```bash
+yarn playwright install firefox
+yarn test:userscript:firefox
+```
+
+Live journey E2E (real Hetzner page + live API):
+
+```bash
+yarn test:userscript:firefox:real
+```
+
+## Technical Details
+
+Backend services:
+- Daily PassMark CPU scrape via Cloudflare Worker Cron Trigger
+- Snapshot storage in Cloudflare R2
+- Public Worker API with fuzzy CPU name lookup
+- Cloudflare Browser Rendering fallback when direct fetch is blocked
 
 ## Requirements
 
@@ -91,63 +177,6 @@ Runs every day at 03:00 UTC.
 - `GET /v1/admin/browser-check?url=<url>` (verify Browser Rendering)
 
 `/v1/admin/*` is test-only and returns `403` unless `ENABLE_TEST_ENDPOINTS=true` (or localhost runtime).
-
-## Userscript (Hetzner Auction)
-
-Userscript file:
-- `userscripts/hetzner-auction-passmark.user.js`
-
-What it does on `https://www.hetzner.com/sb/`:
-- Detects each auction card CPU + monthly euro price.
-- Calls this API (`/v1/cpus?query=...`) to get CPU Mark.
-- Renders `CPU Mark` and `Score / €` on the card.
-- Adds a sort selector for visible cards: `Hetzner Default | CPU Mark | Score / €`.
-
-### Install
-
-1. Install Tampermonkey (or Greasemonkey) in your browser.
-2. Install directly from raw GitHub URL:
-
-```text
-https://raw.githubusercontent.com/yuhuishi-convect/passmark-api/main/userscripts/hetzner-auction-passmark.user.js
-```
-
-3. Open/reload `https://www.hetzner.com/sb/`.
-4. Use the `Sort By` selector above the auction cards:
-   - `Hetzner Default`
-   - `CPU Mark (High → Low)`
-   - `Score / € (High → Low)`
-
-### Screenshot
-
-![Hetzner Auction PassMark Overlay](assets/screen.png)
-
-### Testing the userscript
-
-Manual:
-- Open `https://www.hetzner.com/sb/` and verify each card gets a PassMark info box.
-
-Automated (local):
-- We test extraction/scoring helpers with Node tests:
-
-```bash
-yarn test
-```
-
-Userscript helper tests are in:
-- `test/userscript/utils.test.js`
-
-Headless Firefox E2E:
-
-```bash
-yarn playwright install firefox
-yarn test:userscript:firefox
-```
-
-This runs Playwright in headless Firefox against a local fixture page and asserts the userscript renders:
-- CPU Mark
-- Price
-- Score / €
 
 ### Example
 
