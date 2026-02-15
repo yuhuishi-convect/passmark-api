@@ -4,6 +4,7 @@
 // @version      0.2.0
 // @description  Show CPU Mark and CPU Mark per Euro on Hetzner Server Auction cards.
 // @author       passmark-api
+// @match        https://www.hetzner.com/sb
 // @match        https://www.hetzner.com/sb/*
 // @grant        none
 // ==/UserScript==
