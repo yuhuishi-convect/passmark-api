@@ -101,6 +101,7 @@ What it does on `https://www.hetzner.com/sb/`:
 - Detects each auction card CPU + monthly euro price.
 - Calls this API (`/v1/cpus?query=...`) to get CPU Mark.
 - Renders `CPU Mark` and `Score / €` on the card.
+- Adds a sort selector for visible cards: `Hetzner Default | CPU Mark | Score / €`.
 
 ### Install
 
@@ -108,6 +109,10 @@ What it does on `https://www.hetzner.com/sb/`:
 2. Create a new userscript.
 3. Paste `userscripts/hetzner-auction-passmark.user.js`.
 4. Open/reload `https://www.hetzner.com/sb/`.
+5. Use the `Sort By` selector above the auction cards:
+   - `Hetzner Default`
+   - `CPU Mark (High → Low)`
+   - `Score / € (High → Low)`
 
 ### Testing the userscript
 

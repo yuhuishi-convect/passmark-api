@@ -47,3 +47,72 @@ test('userscript renders cpu mark and score-per-euro on auction card', async ({ 
   await expect(box).toContainText('206.08');
   await expect(box).toContainText('Intel Core i7-6700 @ 3.40GHz');
 });
+
+test('userscript can sort visible cards by cpu mark', async ({ page }) => {
+  await page.route('https://passmark-api.dayeye2006.workers.dev/v1/cpus**', async (route) => {
+    const url = new URL(route.request().url());
+    const query = (url.searchParams.get('query') || '').toLowerCase();
+
+    let result;
+    if (query.includes('i9-9999k')) {
+      result = {
+        id: 'intel-core-i9-9999k',
+        name: 'Intel Core i9-9999K @ 3.60GHz',
+        cpuMark: 8000,
+      };
+    } else {
+      result = {
+        id: 'intel-core-i7-6700',
+        name: 'Intel Core i7-6700 @ 3.40GHz',
+        cpuMark: 20000,
+      };
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        total: 1,
+        results: [result],
+      }),
+    });
+  });
+
+  await page.setContent(
+    `
+    <!doctype html>
+    <html>
+      <body>
+        <ul class="product-list">
+          <li class="border-card">
+            <div class="row">
+              <div class="col-lg-4 col-md-4">Intel Core i9-9999K @ 3.60GHz</div>
+              <div class="col-lg-3 col-md-3">Price €250.00</div>
+            </div>
+          </li>
+          <li class="border-card">
+            <div class="row">
+              <div class="col-lg-4 col-md-4">Intel Core i7-6700 @ 3.40GHz</div>
+              <div class="col-lg-3 col-md-3">Price €30.00</div>
+            </div>
+          </li>
+        </ul>
+      </body>
+    </html>
+    `,
+    { waitUntil: 'domcontentloaded' },
+  );
+
+  const userscriptPath = path.resolve('userscripts/hetzner-auction-passmark.user.js');
+  const userscriptText = await fs.readFile(userscriptPath, 'utf8');
+  await page.addScriptTag({ content: userscriptText });
+
+  await expect(page.locator('.passmark-auction-box[data-state="ready"]')).toHaveCount(2);
+
+  const sortSelect = page.locator('.passmark-sort-select');
+  await expect(sortSelect).toBeVisible();
+  await sortSelect.selectOption('cpu');
+
+  const firstCard = page.locator('ul.product-list > li.border-card').first();
+  await expect(firstCard.locator('.passmark-auction-box')).toContainText('Intel Core i7-6700 @ 3.40GHz');
+});

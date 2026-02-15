@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Hetzner Auction PassMark Overlay
 // @namespace    https://github.com/dayeye2006/passmark-api
-// @version      0.1.0
+// @version      0.2.0
 // @description  Show CPU Mark and CPU Mark per Euro on Hetzner Server Auction cards.
 // @author       passmark-api
 // @match        https://www.hetzner.com/sb/*
@@ -14,10 +14,17 @@
   const PASSMARK_API_BASE = "https://passmark-api.dayeye2006.workers.dev";
   const STYLE_ID = "passmark-auction-style";
   const BOX_CLASS = "passmark-auction-box";
+  const SORT_BAR_CLASS = "passmark-sortbar";
+  const SORT_SELECT_CLASS = "passmark-sort-select";
   const CARD_SELECTOR = "ul.product-list > li.border-card";
+  const SORT_STORAGE_KEY = "passmark_hetzner_sort_mode";
+  const SORT_DEFAULT = "default";
+  const SORT_CPU = "cpu";
+  const SORT_SPE = "score_per_euro";
 
   const requestCache = new Map();
   let refreshTimer = null;
+  let currentSortMode = SORT_DEFAULT;
 
   function normalizeCpuQuery(value) {
     return String(value || "")
@@ -122,9 +129,138 @@
       .${BOX_CLASS}[data-state="error"] .passmark-value {
         font-weight: 500;
       }
+      .${SORT_BAR_CLASS} {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 8px;
+        margin: 8px 0 12px;
+        font-size: 13px;
+        color: #16324a;
+      }
+      .${SORT_SELECT_CLASS} {
+        border: 1px solid #c7d9ea;
+        border-radius: 4px;
+        padding: 4px 6px;
+        background: #fff;
+        color: #16324a;
+      }
     `;
 
     document.head.appendChild(style);
+  }
+
+  function getSortMode() {
+    if (currentSortMode === SORT_CPU || currentSortMode === SORT_SPE || currentSortMode === SORT_DEFAULT) {
+      return currentSortMode;
+    }
+
+    try {
+      const mode = localStorage.getItem(SORT_STORAGE_KEY) || SORT_DEFAULT;
+      if (mode === SORT_CPU || mode === SORT_SPE || mode === SORT_DEFAULT) {
+        currentSortMode = mode;
+        return mode;
+      }
+      currentSortMode = SORT_DEFAULT;
+      return currentSortMode;
+    } catch (error) {
+      currentSortMode = SORT_DEFAULT;
+      return SORT_DEFAULT;
+    }
+  }
+
+  function setSortMode(mode) {
+    if (mode === SORT_CPU || mode === SORT_SPE || mode === SORT_DEFAULT) {
+      currentSortMode = mode;
+    }
+
+    try {
+      localStorage.setItem(SORT_STORAGE_KEY, mode);
+    } catch (error) {
+      // ignore
+    }
+  }
+
+  function toNumber(value) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function ensureSortControls() {
+    const list = document.querySelector("ul.product-list");
+    if (!list || !list.parentElement) return;
+
+    let bar = list.parentElement.querySelector(`.${SORT_BAR_CLASS}`);
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.className = SORT_BAR_CLASS;
+      bar.innerHTML = `
+        <span>Sort By</span>
+        <select class="${SORT_SELECT_CLASS}">
+          <option value="${SORT_DEFAULT}">Hetzner Default</option>
+          <option value="${SORT_CPU}">CPU Mark (High → Low)</option>
+          <option value="${SORT_SPE}">Score / € (High → Low)</option>
+        </select>
+      `;
+      list.parentElement.insertBefore(bar, list);
+    }
+
+    const select = bar.querySelector(`.${SORT_SELECT_CLASS}`);
+    if (!select) return;
+
+    select.value = getSortMode();
+    if (select.dataset.bound === "1") return;
+
+    select.dataset.bound = "1";
+    select.addEventListener("change", () => {
+      setSortMode(select.value);
+      applySortToVisibleCards();
+    });
+  }
+
+  function ensureOriginalOrder(cards) {
+    cards.forEach((card, index) => {
+      if (!card.dataset.passmarkOriginalOrder) {
+        card.dataset.passmarkOriginalOrder = String(index + 1);
+      }
+    });
+  }
+
+  function getCardsFromList(list) {
+    return Array.from(list.querySelectorAll("li.border-card")).filter((card) => card.parentElement === list);
+  }
+
+  function applySortToVisibleCards() {
+    const list = document.querySelector("ul.product-list");
+    if (!list) return;
+
+    const cards = getCardsFromList(list);
+    if (!cards.length) return;
+
+    ensureOriginalOrder(cards);
+
+    const mode = getSortMode();
+    const getOriginal = (card) => Number(card.dataset.passmarkOriginalOrder || 0);
+    const getValue = (card) => {
+      if (mode === SORT_CPU) return toNumber(card.dataset.passmarkCpuMark);
+      if (mode === SORT_SPE) return toNumber(card.dataset.passmarkScorePerEuro);
+      return null;
+    };
+
+    cards.sort((a, b) => {
+      if (mode === SORT_DEFAULT) return getOriginal(a) - getOriginal(b);
+
+      const aValue = getValue(a);
+      const bValue = getValue(b);
+
+      if (aValue === null && bValue === null) return getOriginal(a) - getOriginal(b);
+      if (aValue === null) return 1;
+      if (bValue === null) return -1;
+      if (bValue !== aValue) return bValue - aValue;
+      return getOriginal(a) - getOriginal(b);
+    });
+
+    cards.forEach((card) => list.appendChild(card));
   }
 
   async function fetchTopCpuMatch(cpuQuery) {
@@ -221,23 +357,33 @@
     try {
       const match = await fetchTopCpuMatch(cpuName);
       if (!match) {
+        card.dataset.passmarkCpuMark = "";
+        card.dataset.passmarkScorePerEuro = "";
         setBoxState(box, "error", `<div class="passmark-row"><span class="passmark-label">PassMark</span><span class="passmark-value">No CPU match</span></div>`);
         return;
       }
 
+      const cpuMark = Number(match.cpuMark);
+      const spe = scorePerEuro(cpuMark, monthlyPrice);
+      card.dataset.passmarkCpuMark = Number.isFinite(cpuMark) ? String(cpuMark) : "";
+      card.dataset.passmarkScorePerEuro = Number.isFinite(spe) ? String(spe) : "";
       renderScore(box, match, monthlyPrice);
     } catch (error) {
+      card.dataset.passmarkCpuMark = "";
+      card.dataset.passmarkScorePerEuro = "";
       setBoxState(box, "error", `<div class="passmark-row"><span class="passmark-label">PassMark</span><span class="passmark-value">Lookup failed</span></div>`);
     }
   }
 
   async function refreshAllCards() {
     ensureStyles();
+    ensureSortControls();
     const cards = document.querySelectorAll(CARD_SELECTOR);
     for (const card of cards) {
       // eslint-disable-next-line no-await-in-loop
       await enhanceCard(card);
     }
+    applySortToVisibleCards();
   }
 
   function scheduleRefresh(delayMs = 250) {
