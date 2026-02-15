@@ -26,12 +26,38 @@
   const requestCache = new Map();
   let refreshTimer = null;
   let currentSortMode = SORT_DEFAULT;
+  let observer = null;
+  let isRefreshing = false;
 
   function normalizeCpuQuery(value) {
     return String(value || "")
       .toLowerCase()
       .replace(/\s+/g, " ")
       .trim();
+  }
+
+  function buildCpuQueryCandidates(input) {
+    const raw = String(input || "").trim();
+    if (!raw) return [];
+
+    const candidates = [];
+    const add = (value) => {
+      const normalized = String(value || "").replace(/\s+/g, " ").trim();
+      if (!normalized) return;
+      if (!candidates.includes(normalized)) candidates.push(normalized);
+    };
+
+    add(raw);
+    add(raw.replace(/\s*@\s*[0-9]+(?:[.,][0-9]+)?\s*ghz\b/gi, ""));
+    add(raw.replace(/\b(v)(\d)\b/gi, "$1 $2"));
+    add(raw.replace(/\b(\w+-\d+)(v\d)\b/gi, "$1 $2"));
+    add(
+      raw
+        .replace(/\s*@\s*[0-9]+(?:[.,][0-9]+)?\s*ghz\b/gi, "")
+        .replace(/\b(\w+-\d+)(v\d)\b/gi, "$1 $2"),
+    );
+
+    return candidates;
   }
 
   function parseEuroPriceFromText(text) {
@@ -265,7 +291,8 @@
   }
 
   async function fetchTopCpuMatch(cpuQuery) {
-    const cacheKey = normalizeCpuQuery(cpuQuery);
+    const queryCandidates = buildCpuQueryCandidates(cpuQuery);
+    const cacheKey = queryCandidates.map(normalizeCpuQuery).join("|");
     if (!cacheKey) return null;
 
     if (requestCache.has(cacheKey)) {
@@ -273,20 +300,43 @@
     }
 
     const promise = (async () => {
-      const url = `${PASSMARK_API_BASE}/v1/cpus?query=${encodeURIComponent(cpuQuery)}&limit=1`;
-      const response = await fetch(url, {
-        method: "GET",
-        headers: { accept: "application/json" },
-      });
+      const maxAttempts = 3;
 
-      if (!response.ok) {
-        throw new Error(`API ${response.status}`);
+      for (const candidate of queryCandidates) {
+        const url = `${PASSMARK_API_BASE}/v1/cpus?query=${encodeURIComponent(candidate)}&limit=1`;
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+          try {
+            const response = await fetch(url, {
+              method: "GET",
+              headers: { accept: "application/json" },
+            });
+
+            if (!response.ok) {
+              const shouldRetry = response.status === 429 || response.status >= 500;
+              if (shouldRetry && attempt < maxAttempts) {
+                const backoff = 350 * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 150);
+                // eslint-disable-next-line no-await-in-loop
+                await new Promise((resolve) => setTimeout(resolve, backoff));
+                continue;
+              }
+              throw new Error(`API ${response.status}`);
+            }
+
+            const payload = await response.json();
+            const result = payload?.results?.[0] || null;
+            if (!result || typeof result.cpuMark !== "number") break;
+            return result;
+          } catch (error) {
+            if (attempt >= maxAttempts) throw error;
+            const backoff = 350 * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 150);
+            // eslint-disable-next-line no-await-in-loop
+            await new Promise((resolve) => setTimeout(resolve, backoff));
+          }
+        }
       }
 
-      const payload = await response.json();
-      const result = payload?.results?.[0] || null;
-      if (!result || typeof result.cpuMark !== "number") return null;
-      return result;
+      return null;
     })();
 
     requestCache.set(cacheKey, promise);
@@ -372,7 +422,12 @@
     } catch (error) {
       card.dataset.passmarkCpuMark = "";
       card.dataset.passmarkScorePerEuro = "";
-      setBoxState(box, "error", `<div class="passmark-row"><span class="passmark-label">PassMark</span><span class="passmark-value">Lookup failed</span></div>`);
+      const message = error instanceof Error ? error.message : "Lookup failed";
+      setBoxState(
+        box,
+        "error",
+        `<div class="passmark-row"><span class="passmark-label">PassMark</span><span class="passmark-value">Lookup failed (${message})</span></div>`,
+      );
     }
   }
 
@@ -394,15 +449,40 @@
 
     refreshTimer = setTimeout(() => {
       refreshTimer = null;
-      refreshAllCards().catch(() => {});
+      if (isRefreshing) return;
+      isRefreshing = true;
+
+      if (observer) observer.disconnect();
+
+      refreshAllCards()
+        .catch(() => {})
+        .finally(() => {
+          if (observer) {
+            observer.observe(document.body, {
+              childList: true,
+              subtree: true,
+            });
+          }
+          isRefreshing = false;
+        });
     }, delayMs);
   }
 
   function boot() {
     scheduleRefresh(50);
 
-    const observer = new MutationObserver(() => {
-      scheduleRefresh(250);
+    observer = new MutationObserver((mutations) => {
+      if (isRefreshing) return;
+
+      const relevant = mutations.some((mutation) => {
+        const targetElement = mutation.target instanceof Element ? mutation.target : null;
+        if (!targetElement) return true;
+        if (targetElement.closest(`.${BOX_CLASS}`)) return false;
+        if (targetElement.closest(`.${SORT_BAR_CLASS}`)) return false;
+        return true;
+      });
+
+      if (relevant) scheduleRefresh(250);
     });
 
     observer.observe(document.body, {
