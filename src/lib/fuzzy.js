@@ -6,6 +6,12 @@ function normalize(value) {
     .replace(/\s+/g, " ");
 }
 
+function canonicalModel(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+}
+
 function clamp01(value) {
   return Math.max(0, Math.min(1, value));
 }
@@ -125,6 +131,11 @@ function scoreCpuMatch(rawQuery, rawTarget) {
 
   if (!query || !target) return 0;
   if (query === target) return 1;
+  const queryCanonical = canonicalModel(query);
+  const targetCanonical = canonicalModel(target);
+  if (queryCanonical && targetCanonical.includes(queryCanonical)) {
+    return 0.985;
+  }
 
   const queryTokens = query.split(" ");
   const targetTokens = target.split(" ");

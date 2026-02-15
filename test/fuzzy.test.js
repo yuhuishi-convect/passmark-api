@@ -33,6 +33,17 @@ test("fuzzySearch handles real CPU model queries sensibly", () => {
   assert.equal(fuzzySearch(cpus, "amd 7500f", 1)[0].id, "7500f");
   assert.equal(fuzzySearch(cpus, "amd rx 7700", 1)[0].id, "rx427");
   assert.equal(fuzzySearch(cpus, "rx5700", 1).length, 0);
+  assert.equal(
+    fuzzySearch(
+      [
+        { id: "xeon-v3", name: "Intel Xeon E5-1650 v3 @ 3.50GHz", cpuMark: 10378 },
+        { id: "xeon-v4", name: "Intel Xeon E5-1650 v4 @ 3.60GHz", cpuMark: 11328 },
+      ],
+      "Intel Xeon E5-1650V3",
+      1,
+    )[0].id,
+    "xeon-v3",
+  );
 });
 
 test("parseCpuTable parses score rows from passmark-like table", () => {
