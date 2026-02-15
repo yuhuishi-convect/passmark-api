@@ -95,6 +95,10 @@ function isAdminAuthorized(request, env) {
   return bearerToken === env.ADMIN_TOKEN;
 }
 
+function isTestModeEnabled(env) {
+  return env.ENABLE_TEST_ENDPOINTS === "true";
+}
+
 async function handleApiRequest(request, env) {
   const url = new URL(request.url);
 
@@ -111,6 +115,17 @@ async function handleApiRequest(request, env) {
 
   if (url.pathname === "/health") {
     return jsonResponse({ ok: true, service: "passmark-api" });
+  }
+
+  if (url.pathname.startsWith("/v1/admin/")) {
+    if (!isTestModeEnabled(env)) {
+      return jsonResponse(
+        {
+          error: "Admin endpoints are disabled. Use cron triggers in production or enable test mode for local testing.",
+        },
+        403,
+      );
+    }
   }
 
   if (url.pathname === "/v1/admin/scrape" && request.method === "POST") {
@@ -192,6 +207,17 @@ async function handleApiRequest(request, env) {
     });
   }
 
+  if (url.pathname === "/v1/cpus/all") {
+    const latest = await getLatestSnapshotOrError(env);
+    if (latest instanceof Response) return latest;
+
+    return jsonResponse({
+      generatedAt: latest.generatedAt,
+      total: (latest.cpus || []).length,
+      results: latest.cpus || [],
+    });
+  }
+
   if (url.pathname.startsWith("/v1/cpus/")) {
     const latest = await getLatestSnapshotOrError(env);
     if (latest instanceof Response) return latest;
@@ -212,6 +238,7 @@ async function handleApiRequest(request, env) {
         "GET /v1/snapshots/latest",
         "GET /v1/snapshots/:date",
         "GET /v1/cpus?query=<name>&limit=5",
+        "GET /v1/cpus/all",
         "GET /v1/cpus/:id",
         "GET /v1/admin/browser-check?url=https://example.com",
         "POST /v1/admin/scrape",

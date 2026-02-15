@@ -16,6 +16,25 @@ test("fuzzySearch prioritizes relevant cpu names", () => {
   assert.equal(results.length > 0, true);
 });
 
+test("fuzzySearch handles real CPU model queries sensibly", () => {
+  const cpus = [
+    { id: "7800x3d", name: "AMD Ryzen 7 7800X3D", cpuMark: 34285 },
+    { id: "9800x3d", name: "AMD Ryzen 7 9800X3D", cpuMark: 39975 },
+    { id: "14900k", name: "Intel Core i9-14900K", cpuMark: 58450 },
+    { id: "14900kf", name: "Intel Core i9-14900KF", cpuMark: 58324 },
+    { id: "7500f", name: "AMD Ryzen 5 7500F", cpuMark: 26632 },
+    { id: "a8-7500", name: "AMD A8-7500", cpuMark: 3302 },
+    { id: "rx427", name: "AMD RX-427BB", cpuMark: 2669 },
+    { id: "fx7600p", name: "AMD FX-7600P", cpuMark: 2557 },
+  ];
+
+  assert.equal(fuzzySearch(cpus, "7800x3d", 1)[0].id, "7800x3d");
+  assert.equal(fuzzySearch(cpus, "intel core i9-14900k", 1)[0].id, "14900k");
+  assert.equal(fuzzySearch(cpus, "amd 7500f", 1)[0].id, "7500f");
+  assert.equal(fuzzySearch(cpus, "amd rx 7700", 1)[0].id, "rx427");
+  assert.equal(fuzzySearch(cpus, "rx5700", 1).length, 0);
+});
+
 test("parseCpuTable parses score rows from passmark-like table", () => {
   const html = `
     <table>

@@ -43,6 +43,13 @@ wrangler secret put ADMIN_TOKEN
 
 6. Ensure Browser Rendering is enabled for your account (needed for fallback and browser checks).
 
+7. Admin HTTP endpoints are disabled by default in production.
+Use cron triggers for real ingestion. For local testing only, enable:
+
+```bash
+yarn wrangler dev --var ENABLE_TEST_ENDPOINTS:true
+```
+
 ## Local development
 
 ```bash
@@ -78,9 +85,12 @@ Runs every day at 03:00 UTC.
 - `GET /v1/snapshots/latest`
 - `GET /v1/snapshots/:date` (`YYYY-MM-DD`)
 - `GET /v1/cpus?query=<name>&limit=5`
+- `GET /v1/cpus/all`
 - `GET /v1/cpus/:id`
 - `POST /v1/admin/scrape` (manual scrape trigger)
 - `GET /v1/admin/browser-check?url=<url>` (verify Browser Rendering)
+
+`/v1/admin/*` is test-only and returns `403` unless `ENABLE_TEST_ENDPOINTS=true` (or localhost runtime).
 
 ### Example
 

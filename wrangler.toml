@@ -13,6 +13,7 @@ preview_bucket_name = "passmark-cpu-scores-preview"
 
 [vars]
 PASSMARK_SOURCE_URL = "https://www.cpubenchmark.net/cpu-list/all"
+ENABLE_TEST_ENDPOINTS = "false"
 
 [browser]
 binding = "BROWSER"
